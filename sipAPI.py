@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-from flask_restful import Resource, Api
 import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
@@ -76,7 +75,7 @@ X = X.astype(float)
 y = y.astype(float)
 
 app = Flask(__name__)
-objapi = Api(app)
+
 
 scaler = MinMaxScaler()
 clf = LogisticRegression(class_weight={1:25, 0:1}, solver='lbfgs')
@@ -97,83 +96,85 @@ for train, test in skf.split(X, y):
 
 
 
-class getData(Resource):
-    def get(self, intGA, intBW, strMG, strSex, intAPG5, strPC, strIVH, strRace):
-
-        #[28, 1240, 1.0, 0, 8, 0, 0, 0.0, 0, 0, 0, 0, 0, 1]
-
-        if(strMG == "yes"):
-            intMG = 1.0
-        else:
-            intMG = 0.0
+@app.route('/getData/<intGA>/<intBW>/<strMG>/<strSex>/<intAPG5>/<strPC>/<strIVH>/<strRace>', methods=['GET'])
+def get_data(intGA, intBW, strMG, strSex, intAPG5, strPC, strIVH, strRace):
+    try:
+        intGA = float(intGA)
+        intBW = float(intBW)
+        intAPG5 = float(intAPG5)
         
-        if(strSex == "male"):
-            intSex = 0
-        else:
-            intSex = 1
+        intMG = 1.0 if strMG.lower() == "yes" else 0.0
+        intSex = 0 if strSex.lower() == "male" else 1
+        intPC = 1 if strPC.lower() == "yes" else 0
+        intIVH = 1.0 if strIVH.lower() == "yes" else 0.0
 
-        if(strPC == "yes"):
-            intPC = 1
-        else:
-            intPC = 0
-            
-        if(strIVH == "yes"):
-            intIVH = 1.0
-        else:
-            intIVH = 0.0
+        raceA = 1 if strRace == "A" else 0
+        raceB = 1 if strRace == "B" else 0
+        raceO = 1 if strRace == "O" else 0
+        raceU = 1 if strRace == "U" else 0
+        raceW = 1 if strRace == "W" else 0
+        raceOthers = 1 if strRace not in ["A", "B", "O", "U", "W"] else 0
 
-        raceA = 0
-        raceB = 0
-        raceO = 0
-        raceOthers = 0
-        raceU = 0
-        raceW = 0
+        arr = [[intGA, intBW, intMG, intSex, intAPG5, intPC, intIVH, raceA, raceB, raceO, 
+                     raceOthers, raceU, raceW]]
+        
+        Y_pred = clf.predict_proba(scaler.transform(arr))
+        
+        userData = {"Score": Y_pred[0][1]}
+        
+        response = jsonify(userData)
+        response.headers.add('Access-Control-Allow-Origin', '*')    
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
-        if(strRace == "A"):
-            raceA = 1
-        elif(strRace == "B"):
-            raceB = 1
-        elif(strRace == "O"):
-            raceO = 1
-        elif(strRace == "U"):
-            raceU = 1
-        elif(strRace == "W"):
-            raceW = 1
-        else:
-            raceOthers = 1
+@app.route('/predict', methods=['POST', 'OPTIONS'])
+def predict():
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
 
-        print(intGA)
-        print(intBW)
-        print(intMG)
-        print(intSex)
-        print(intAPG5)
-        print(intPC)
-        print(intIVH)
-        print(raceA)
-        print(raceB)
-        print(raceO)
-        print(raceOthers)
-        print(raceU)
-        print(raceW)
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        intGA = float(data.get('GA_By_DatesWeeks', 0))
+        intBW = float(data.get('BirthWeight', 0))
+        strMG = str(data.get('Multiple_gest', 'no')).lower()
+        strSex = str(data.get('Sex', 'female')).lower()
+        intAPG5 = float(data.get('Apgar_5', 0))
+        strPC = str(data.get('PC_Preterm_Labor', 'no')).lower()
+        strIVH = str(data.get('ivh_severe', 'no')).lower()
+        strRace = str(data.get('Race', 'Others'))
+
+        intMG = 1.0 if strMG in ["yes", "1.0", "1"] else 0.0
+        intSex = 0 if strSex in ["male", "m"] else 1
+        intPC = 1 if strPC in ["yes", "1"] else 0
+        intIVH = 1.0 if strIVH in ["yes", "1"] else 0.0
+
+        raceA = 1 if strRace == "A" else 0
+        raceB = 1 if strRace == "B" else 0
+        raceO = 1 if strRace == "O" else 0
+        raceU = 1 if strRace == "U" else 0
+        raceW = 1 if strRace == "W" else 0
+        raceOthers = 1 if strRace not in ["A", "B", "O", "U", "W"] else 0
         
         arr = [[intGA, intBW, intMG, intSex, intAPG5, intPC, intIVH, raceA, raceB, raceO, 
                      raceOthers, raceU, raceW]]
         
         Y_pred = clf.predict_proba(scaler.transform(arr))
         
-        userData = {}
-        print(Y_pred)
-            
-        userData["Score"] = Y_pred[0][0]
-
-
+        userData = {"Score": Y_pred[0][1]}
+        
         response = jsonify(userData)
         response.headers.add('Access-Control-Allow-Origin', '*')    
-        
         return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
-
-objapi.add_resource(getData, "/getData/<intGA>/<intBW>/<strMG>/<strSex>/<intAPG5>/<strPC>/<strIVH>/<strRace>")
-
-#app.run(debug=True)
-app.run(host='0.0.0.0', port=5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001)
